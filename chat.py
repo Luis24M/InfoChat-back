@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 CORS(app)
-openai.api_key = "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"
+openai.api_key = os.environ['API_KEY']
 
 context = {"role": "system", "content": "Eres un asistente muy útil llamado InfoChat, para la  escuela de informatica de la Universidad nacional de Trujillo."}
 messages = [context]
