@@ -10,6 +10,7 @@ import os
 
 app = Flask(__name__)
 CORS(app)
+openai.api_key = os.environ['API_KEY']
 
 # Base de Datos
 client=MongoClient('mongodb+srv://Luis:Lomaximoluis02@cluster0.f6yp4mn.mongodb.net/?retryWrites=true&w=majority')
