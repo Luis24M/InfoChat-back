@@ -22,7 +22,7 @@ app.config['MAIL_PORT'] = 465  # Puerto para SSL
 app.config['MAIL_USE_TLS'] = False  # No se utiliza TLS
 app.config['MAIL_USE_SSL'] = True  # Se utiliza SSL
 app.config['MAIL_USERNAME'] = 'luno2402@gmail.com'
-app.config['MAIL_PASSWORD'] = 'lomaximoluis24'
+app.config['MAIL_PASSWORD'] = 'wrtguvwoyputbbpw'
 mail = Mail(app)
 
 @app.route('/users', methods=['POST'])
