@@ -4,7 +4,7 @@ from flask_pymongo import PyMongo
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash # Para encriptar contraseñas
 from flask_cors import CORS
-from bson import json_util
+from bson import json_util, ObjectId
 import openai
 import os
 
@@ -16,6 +16,13 @@ openai.api_key = os.environ['API_KEY']
 client=MongoClient('mongodb+srv://Luis:Lomaximoluis02@cluster0.f6yp4mn.mongodb.net/?retryWrites=true&w=majority')
 db = client['InfoChat']
 user_collection = db['users']
+
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 465  # Puerto para SSL
+app.config['MAIL_USE_TLS'] = True  # Si se utiliza TLS
+app.config['MAIL_USERNAME'] = 'luno2402@gmail.com'
+app.config['MAIL_PASSWORD'] = 'lomaximoluis24'
+mail = Mail(app)
 
 @app.route('/users', methods=['POST'])
 def create_users():
@@ -48,6 +55,25 @@ def get_users():
     users = user_collection.find()
     reponse = json_util.dumps(users)
     return Response(reponse, mimetype='application/json')
+
+@app.route('/users/<id>', methods=['GET'])
+def get_user(id):
+    user = user_collection.find_one({'_id': ObjectId(id)})
+    reponse = json_util.dumps(user)
+    return Response(reponse, mimetype='application/json')
+    return {'message': id}
+
+@app.route('/users/username/<username>', methods=['GET'])
+def get_user_by_username(username):
+    user = user_collection.find({'username': username})
+    if user:
+        response = json_util.dumps(user)
+        return Response(response, mimetype='application/json')
+    else:
+        return jsonify({'message': 'User not found'})
+
+
+
 # manejo de errores
 @app.errorhandler(404)
 def not_found(error=None):
@@ -89,39 +115,42 @@ def chat():
 # Fin de configuracion de Chatbot
 
 # Configura el servicio de envío de correos electrónicos
-app.config['MAIL_SERVER'] = 'smtp.example.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'your-email@example.com'
-app.config['MAIL_PASSWORD'] = 'your-password'
-mail = Mail(app)
-
-@app.route("/submit_comment", methods=["POST"])
-def submit_comment():
-    data = request.get_json()
-    comment = data["comment"]
-    name = data["name"]
-    email = data["email"]
-
-    # Guardar los datos en la base de datos
-    # Ejemplo con SQLAlchemy:
-    # from models import Comment
-    # comment_entry = Comment(name=name, email=email, comment=comment)
-    # db.session.add(comment_entry)
-    # db.session.commit()
-
-    # Enviar el correo de confirmación
-    msg = Message("Confirmación de queja", sender='your-email@example.com', recipients=[email])
-    msg.body = f"Hola {name}, hemos recibido tu queja. Gracias por tu feedback."
+def send_confirmation_email(email):
+    msg = Message('Confirmación de comentario', sender='tu_correo_electronico', recipients=[email])
+    msg.body = 'Gracias por tu comentario. Lo hemos recibido correctamente.'
     mail.send(msg)
 
-    response = {
-        "message": "¡Gracias por tu queja! Hemos recibido tu feedback y te hemos enviado un correo de confirmación."
-    }
-
-    return jsonify(response)
-
 # Fin de configuracion de envío de correos electrónicos
+
+# Recibir comentarios
+@app.route('/comments', methods=['POST'])
+def create_comment():
+    name = request.json['name']
+    email = request.json['email']
+    comment = request.json['comment']
+    estado = 'peding'
+    if name and email and comment:
+        comment_data = {
+            'name': name,
+            'email': email,
+            'comment': comment,
+            'status': estado
+        }
+        
+        comment_id = db.comments.insert_one(comment_data).inserted_id
+        send_confirmation_email(email)
+
+        response = {
+            'id': str(comment_id),
+            'name': name,
+            'email': email,
+            'comment': comment,
+            'status': estado
+        }
+        
+        return jsonify(response)
+    else:
+        return jsonify({'message': 'Invalid data'})
 
 if __name__ == "__main__":
     app.run(debug=True)
