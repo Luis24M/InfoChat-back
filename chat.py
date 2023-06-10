@@ -19,7 +19,8 @@ user_collection = db['users']
 
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 465  # Puerto para SSL
-app.config['MAIL_USE_TLS'] = True  # Si se utiliza TLS
+app.config['MAIL_USE_TLS'] = False  # No se utiliza TLS
+app.config['MAIL_USE_SSL'] = True  # Se utiliza SSL
 app.config['MAIL_USERNAME'] = 'luno2402@gmail.com'
 app.config['MAIL_PASSWORD'] = 'lomaximoluis24'
 mail = Mail(app)
