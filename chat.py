@@ -21,7 +21,7 @@ app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 465  # Puerto para SSL
 app.config['MAIL_USE_TLS'] = False  # No se utiliza TLS
 app.config['MAIL_USE_SSL'] = True  # Se utiliza SSL
-app.config['MAIL_USERNAME'] = 'luno2402@gmail.com'
+app.config['MAIL_USERNAME'] = 'InfoChat@support.com'
 app.config['MAIL_PASSWORD'] = 'wrtguvwoyputbbpw'
 mail = Mail(app)
 
@@ -138,9 +138,16 @@ def create_comment():
         comment_id = db.comments.insert_one(comment_data).inserted_id
         
         msg = Message('Gracias por tu Feedback', 
-                      sender='InfoChat@comment.com', # Cambiar por tu correo electrónico 
+                      sender='InfoChat@support.com',
                       recipients=[email])
-        msg.body = 'Hemos recibido tu mensaje: \n\t"' + comment + '"\nGracias por tu Feedback'
+        msg.body = f'''Hola {name},
+
+Hemos recibido tu mensaje: "{comment}"
+
+Gracias por tu Feedback. Queremos que sepas que valoramos tus comentarios y nos aseguraremos de abordar cualquier problema que hayas mencionado. Si es necesario, nos comunicaremos contigo para obtener más detalles.
+
+Atentamente,
+El equipo de InfoChat'''
         mail.send(msg)
 
         response = {
