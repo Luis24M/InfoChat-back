@@ -116,10 +116,7 @@ def chat():
 # Fin de configuracion de Chatbot
 
 # Configura el servicio de envío de correos electrónicos
-def send_confirmation_email(email):
-    msg = Message('Gracias por tu Feedback', sender='tu_correo_electronico', recipients=[email])
-    msg.body = 'Hemos recibido tu mensaje: .'
-    mail.send(msg)
+
 
 # Fin de configuracion de envío de correos electrónicos
 
@@ -143,7 +140,7 @@ def create_comment():
         msg = Message('Gracias por tu Feedback', 
                       sender='InfoChat@comment.com', # Cambiar por tu correo electrónico 
                       recipients=[email])
-        msg.body = 'Hemos recibido tu mensaje: \n' + comment + '\nGracias por tu Feedback'
+        msg.body = 'Hemos recibido tu mensaje: \n\t"' + comment + '"\nGracias por tu Feedback'
         mail.send(msg)
 
         response = {
