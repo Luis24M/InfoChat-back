@@ -21,8 +21,8 @@ app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 465  # Puerto para SSL
 app.config['MAIL_USE_TLS'] = False  # No se utiliza TLS
 app.config['MAIL_USE_SSL'] = True  # Se utiliza SSL
-app.config['MAIL_USERNAME'] = 'luno2402@gmail.com'
-app.config['MAIL_PASSWORD'] = 'wrtguvwoyputbbpw'
+app.config['MAIL_USERNAME'] = 'infochatunt@gmail.com'
+app.config['MAIL_PASSWORD'] = 'rnuwpvlavldtjhnm'
 mail = Mail(app)
 
 @app.route('/users', methods=['POST'])
