@@ -138,7 +138,7 @@ def create_comment():
         comment_id = db.comments.insert_one(comment_data).inserted_id
         
         msg = Message('Gracias por tu Feedback', 
-                      sender=('Comentarios','InfoChat@support.com'),
+                      sender=('InfoChat','InfoChat@support.com'), 
                       recipients=[email])
         msg.body = f'''Hola {name},
 
