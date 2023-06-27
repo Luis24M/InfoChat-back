@@ -1,25 +1,40 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, redirect, render_template, request, jsonify, Response, session, url_for
+from flask_login import current_user
+from functools import wraps
 from flask_mail import Mail, Message
-from flask_pymongo import PyMongo
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash # Para encriptar contraseñas
 from flask_cors import CORS
 from bson import json_util, ObjectId
+# chatbot
+from PyPDF2 import PdfReader
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
+# 
 import openai
 import os
-import random
-import string
-import requests
 
+# Se inicializa la app 
 app = Flask(__name__)
+app.secret_key = 'clave_secreta'
 CORS(app)
-openai.api_key = os.environ['API_KEY']
+UPLOAD_FOLDER = '/uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Base de Datos
+
+
+# Conexion Base de Datos 
 client=MongoClient('mongodb+srv://Luis:Lomaximoluis02@cluster0.f6yp4mn.mongodb.net/?retryWrites=true&w=majority')
 db = client['InfoChat']
 user_collection = db['users']
+pdf_collection = db['pdfs']
 
+# Configuración de datos para los emails 
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 465  # Puerto para SSL
 app.config['MAIL_USE_TLS'] = False  # No se utiliza TLS
@@ -28,45 +43,7 @@ app.config['MAIL_USERNAME'] = 'infochatunt@gmail.com'
 app.config['MAIL_PASSWORD'] = 'rnuwpvlavldtjhnm'
 mail = Mail(app)
 
-
-@app.route('/check_auth', methods=['GET'])
-def check_auth():
-    # Aquí puedes realizar la lógica para verificar si el usuario está autenticado
-    # Por ejemplo, puedes usar información de la sesión, cookies o tokens JWT
-    # Devuelve un JSON con el estado de autenticación
-    authenticated = True  # Cambia esto según tu lógica de autenticación
-    return jsonify({'authenticated': authenticated})
-
-
-# Validar usuario
-def validate_user(email, password):
-    user = user_collection.find_one({'email': email})
-    if user and check_password_hash(user['password'], password):
-        return True
-    return False
-
-def verify_email(email):
-    api_key = 'b930a43d82b5429eb863eae4be1b77e1'
-    url = f'https://api.zerobounce.net/v2/validate?api_key={api_key}&email={email}'
-
-    response = requests.get(url)
-    data = response.json()
-
-    if data['status'] == 'valid':
-        return True
-    else:
-        return False
-
-
-@app.route('/login', methods=['POST'])
-def login():
-    email = request.json['email']
-    password = request.json['password']
-    
-    if validate_user(email, password):
-        return jsonify({'message': 'Login successful'})
-    else:
-        return jsonify({'message': 'Invalid email or password'})
+# ============================================ Usuario ==========================================================
 
 # Registrar nuevo usuario
 @app.route('/register', methods=['POST'])
@@ -79,11 +56,9 @@ def register():
         existing_user = user_collection.find_one({'username': username})
         if existing_user:
             return jsonify({'message': 'Username already exists'})
-        
-        # Verificar si el correo electrónico es válido antes de registrarlo
-        if not verify_email(email):
-            return jsonify({'message': 'Invalid email'})
-
+        existing_email = user_collection.find_one({'email': email})
+        if existing_email:
+            return jsonify({'message': 'Email already exists'})
         hashed_password = generate_password_hash(password)
         user_data = {
             'username': username,
@@ -97,116 +72,14 @@ def register():
             'username': username,
             'email': email
         }
-        
-        # Enviar el correo de verificación de correo electrónico
-        verification_link = generate_verification_link(email)
-        send_verification_email(email, verification_link)
 
         return jsonify(response)
     else:
         return jsonify({'message': 'Incomplete data'})
 
-def generate_verification_link(email):
-    # Generar un token aleatorio para el enlace de verificación
-    token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-    
-    # Guardar el token en la base de datos junto con el correo electrónico del usuario
-    db.email_verification_tokens.insert_one({'email': email, 'token': token})
-    
-    # Generar el enlace de verificación de correo electrónico
-    verification_link = f'file:///c%3A/Users/luism/Documents/web/verify_email?token={token}'
-    
-    return verification_link
-
-def send_verification_email(email, verification_link):
-    msg = Message('Verificación de correo electrónico', 
-                  sender=('InfoChat','InfoChat@support.com'), 
-                  recipients=[email])
-    msg.body = f'Haz clic en el siguiente enlace para verificar tu correo electrónico:\n{verification_link}'
-    mail.send(msg)
 
 
-# Generar enlace de restablecimiento de contraseña
-def generate_reset_password_link(email):
-    # Generar un token aleatorio para el enlace de restablecimiento de contraseña
-    token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-    
-    # Guardar el token en la base de datos junto con el correo electrónico del usuario
-    db.reset_password_tokens.insert_one({'email': email, 'token': token})
-    
-    # Generar el enlace de restablecimiento de contraseña
-    reset_password_link = f'http://tu-sitio-web.com/reset_password?token={token}'
-    
-    return reset_password_link
-
-# Recuperar contraseña
-@app.route('/forgot_password', methods=['POST'])
-def forgot_password():
-    email = request.json['email']
-    
-    user = user_collection.find_one({'email': email})
-    if user:
-        # Generar el enlace de restablecimiento de contraseña
-        reset_password_link = generate_reset_password_link(email)
-        
-        # Enviar el enlace por correo electrónico
-        msg = Message('Restablecer contraseña', 
-                      sender=('InfoChat','InfoChat@support.com'), 
-                      recipients=[email])
-        msg.body = f'Haz clic en el siguiente enlace para restablecer tu contraseña:\n{reset_password_link}'
-        mail.send(msg)
-
-        return jsonify({'message': 'Password reset link sent to your email'})
-    else:
-        return jsonify({'message': 'Email not found'})
-
-# Restablecer contraseña
-@app.route('/reset_password', methods=['POST'])
-def reset_password():
-    email = request.json['email']
-    token = request.json['token']
-    new_password = request.json['new_password']
-    
-    # Verificar que el token sea válido para el correo electrónico dado
-    reset_token = db.reset_password_tokens.find_one({'email': email, 'token': token})
-    if reset_token:
-        # Actualizar la contraseña del usuario en la base de datos
-        hashed_password = generate_password_hash(new_password)
-        user_collection.update_one({'email': email}, {'$set': {'password': hashed_password}})
-        
-        # Eliminar el token de restablecimiento de contraseña de la base de datos
-        db.reset_password_tokens.delete_one({'email': email, 'token': token})
-        
-        return jsonify({'message': 'Password reset successful'})
-    else:
-        return jsonify({'message': 'Invalid token'})
-
-@app.route('/users', methods=['POST'])
-def create_users():
-    username = request.json['username']
-    password = request.json['password']
-    email = request.json['email']
-    
-    if username and email and password:
-        
-        hashed_password = generate_password_hash(password)
-        user_data = (
-            {'username': username, 'email': email, 'password': hashed_password}
-        )
-        result = user_collection.insert_one(user_data)
-        user_id = str(result.inserted_id)
-        response = {
-            'id': str(id),
-            'username': username,
-            'email': email,
-            'password': hashed_password
-        }
-        return response
-    else:
-        return {'message': 'Incomplete data'}
-
-    return {'message': 'received'}
-
+# Ruta para obtener los usuarios
 @app.route('/users', methods=['GET'])
 def get_users():
     users = user_collection.find()
@@ -218,7 +91,6 @@ def get_user(id):
     user = user_collection.find_one({'_id': ObjectId(id)})
     reponse = json_util.dumps(user)
     return Response(reponse, mimetype='application/json')
-    return {'message': id}
 
 @app.route('/users/username/<username>', methods=['GET'])
 def get_user_by_username(username):
@@ -228,9 +100,52 @@ def get_user_by_username(username):
         return Response(response, mimetype='application/json')
     else:
         return jsonify({'message': 'User not found'})
+    
+    
+# Ruta para verificar el inicio de sesión de un usuario
+@app.route('/login', methods=['POST'])
+def login_user():
+    username_or_email = request.json['username_or_email']
+    password = request.json['password']
+
+    if username_or_email and password:
+        user = user_collection.find_one({
+            '$or': [
+                {'username': username_or_email},
+                {'email': username_or_email}
+            ]
+        })
+
+        if user and check_password_hash(user['password'], password):
+            response = {'message': 'Login successful'}
+            session['user_id'] = str(user['_id'])
+            session['username'] = str(user['username'])
+            session['email'] = str(user['email'])
+
+        else:
+            response = {'message': 'Invalid username/email or password'}
+    else:
+        response = {'message': 'Incomplete data'}
+
+    return jsonify(response)
+
+# Decorador para verificar la autenticación del usuario
+def login_required(route_function):
+    @wraps(route_function)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' in session:
+            # Usuario autenticado, continuar con la ruta
+            return route_function(*args, **kwargs)
+        else:
+            # Usuario no autenticado, redirigir al inicio de sesión
+            return redirect(url_for('index'))
+    
+    return decorated_function
 
 
+# =============================================================================================================================
 
+# ===================================================== Manejo de errores =====================================================
 # manejo de errores
 @app.errorhandler(404)
 def not_found(error=None):
@@ -241,12 +156,15 @@ def not_found(error=None):
     response.status_code = 404
     return response
 
+# ===========================================================================================================================
 
+# ========================================================== ChatBot ========================================================
 # Configuracion de Chatbot
 openai.api_key = os.environ['API_KEY']
 context = {"role": "system", "content": "Eres un asistente muy útil llamado InfoChat, para la  escuela de informatica de la Universidad nacional de Trujillo."}
 messages = [context]
 
+# Ruta para el chatbot
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -255,7 +173,7 @@ def chat():
     messages.append({"role": "user", "content": query})
 
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo-0613",
         messages=messages
     )
 
@@ -263,7 +181,7 @@ def chat():
 
     messages.append({"role": "assistant", "content": response_content})
 
-    response = {
+    response = {    
         "message": response_content
     }
 
@@ -271,18 +189,112 @@ def chat():
 
 # Fin de configuracion de Chatbot
 
-# Configura el servicio de envío de correos electrónicos
+# # Reformulacion de Chatbot con langchain y pdfs
+# # Configuracion de Chatbot
+# openai.api_key = os.environ['API_KEY']
+
+# def get_pdf_text(pdf_docs): # esta función se encarga de obtener el texto de los PDFs
+#     text = ""   # se inicializa la variable que contendrá el texto de los PDFs
+#     for pdf in pdf_docs:   # se itera sobre los PDFs
+#         pdf_reader = PdfReader(pdf) # se lee el PDF
+#         for page in pdf_reader.pages: # se itera sobre las páginas del PDF
+#             text += page.extract_text() # se extrae el texto de la página y se agrega a la variable
+#     return text # se retorna el texto de los PDFs
 
 
-# Fin de configuracion de envío de correos electrónicos
+# def get_text_chunks(text): # esta función se encarga de dividir el texto en chunks
+#     text_splitter = CharacterTextSplitter( # se inicializa el text splitter
+#         separator="\n", # se usa el salto de línea como separador
+#         chunk_size=1000, # se define el tamaño de los chunks en 1000 caracteres
+#         chunk_overlap=200, # se define el overlap de los chunks en 200 caracteres (el overlap es la cantidad de caracteres que se repiten entre chunks)
+#         length_function=len # se define la función que se usará para calcular la longitud del texto
+#     )
+#     chunks = text_splitter.split_text(text) # se divide el texto en chunks
+#     return chunks # se retornan los chunks
 
+
+# def get_vectorstore(text_chunks): # esta función se encarga de obtener el vectorstore
+#     embeddings = OpenAIEmbeddings() # se inicializan los embeddings
+#     # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
+#     vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings) # se inicializa el vectorstore
+#     return vectorstore # se retorna el vectorstore
+
+
+# def get_conversation_chain(vectorstore): # esta función se encarga de obtener la conversación
+#     llm = ChatOpenAI() # se inicializa el modelo de lenguaje
+#     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
+
+#     memory = ConversationBufferMemory( # se inicializa la memoria
+#         memory_key='chat_history', return_messages=True) # se define la llave de la memoria y se indica que se retornarán los mensajes
+#     conversation_chain = ConversationalRetrievalChain.from_llm( # se inicializa la conversación
+#         llm=llm, # se le pasa el modelo de lenguaje
+#         retriever=vectorstore.as_retriever(), # se le pasa el vectorstore como retriever
+#         memory=memory # se le pasa la memoria
+#     ) 
+#     return conversation_chain # se retorna la conversación
+
+# # Guardar un nuevo pdf en la base de datos
+# @app.route("/pdf", methods=["POST"])
+# def pdf():
+#     # Se obtiene el archivo
+#     file = request.files["file"]
+
+#     # Se guarda el archivo en el directorio de archivos
+#     file.save(os.path.join(app.config["UPLOAD_FOLDER"], file.filename))
+
+#     # Se guarda el nombre del archivo en la base de datos
+#     pdf_collection.insert_one({"name": file.filename})
+
+#     response = {"message": "PDF guardado exitosamente"}
+
+#     return jsonify(response)
+
+
+# # Chatbot
+# @app.route("/chat", methods=["POST"])
+# def chat():
+#     # El chatbot recibe un query y retorna una respuesta en base a los PDFs
+#     data = request.get_json()
+#     query = data["query"]
+    
+#     # Se obtiene el texto de los PDFs de la base de datos pdf_collection
+#     pdf_docs = pdf_collection.find() # se obtienen los PDFs de la base de datos
+#     pdf_docs = [os.path.join(app.config["UPLOAD_FOLDER"], pdf["name"]) for pdf in pdf_docs] # se obtiene la ruta de los PDFs
+#     pdf_text = get_pdf_text(pdf_docs) # se obtiene el texto de los PDFs
+    
+
+#     # Se divide el texto en chunks
+#     text_chunks = get_text_chunks(pdf_text)
+
+#     # Se obtiene el vectorstore
+#     vectorstore = get_vectorstore(text_chunks)
+
+#     # Se obtiene la conversación
+#     conversation_chain = get_conversation_chain(vectorstore)
+
+#     # Se genera la respuesta del chatbot
+#     response = conversation_chain.get_response(query)
+
+#     response_content = response["message"]
+
+#     response = {
+#         "message": response_content
+#     }
+
+#     return jsonify(response)
+
+    
+
+# ===============================================================================================================================
+
+# ============================================================ Comentarios ======================================================
 # Recibir comentarios
 @app.route('/comments', methods=['POST'])
 def create_comment():
-    name = request.json['name']
-    email = request.json['email']
+    name = session.get('username')  # Obtener el nombre del usuario de la sesión
+    email = session.get('email')  # Obtener el correo electrónico del usuario de la sesión
     comment = request.json['comment']
-    estado = 'peding'
+    estado = 'pending'
     if name and email and comment:
         comment_data = {
             'name': name,
@@ -317,6 +329,53 @@ El equipo de InfoChat'''
         return jsonify(response)
     else:
         return jsonify({'message': 'Invalid data'})
+
+# =================================================================================================================
+
+# =================================================== Rutas Html ==================================================
+# index
+@app.route("/")
+def index():
+    if 'user_id' in session:
+        # Usuario autenticado, redirigir al chat
+        return redirect(url_for('chatbot'))
+    else:
+        # Usuario no autenticado, mostrar la página de inicio
+        return render_template("login.html")
+
+# Ruta para cerrar sesión
+@app.route('/logout')
+@login_required
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('index'))
+
+# chat
+@app.route("/chat")
+@login_required
+def chatbot():
+    return render_template("chat.html")
+
+# Ayuda
+@app.route("/ayuda")
+@login_required
+def ayuda():
+    return render_template("help.html")
+
+# Contacto
+@app.route("/contacto")
+@login_required
+def contacto():
+    return render_template("contact.html")
+
+# Procesos de login
+@app.route("/registrar")
+def registrar():
+    return render_template("registrarse.html")
+
+@app.route("/recuperaContraseña")
+def recuperar():
+    return render_template("recuperaContraseña.html")
 
 if __name__ == "__main__":
     app.run(debug=True)
